@@ -14,7 +14,9 @@ const COLOR_SELECT = 'rgba(255,255,80,0.55)';
 const COLOR_MOVE = 'rgba(90,230,90,0.45)';
 const COLOR_ATTACK = 'rgba(240,80,60,0.55)';
 
-let ox = 0, oy = 0;   // 地图绘制偏移
+// 视图状态：平移偏移 + 缩放（世界坐标 → 屏幕坐标：screen = world * zoom + view）
+const view = { x: 0, y: 0, zoom: 1 };
+const MIN_ZOOM = 0.3, MAX_ZOOM = 4;
 
 function setupCanvas() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -28,19 +30,29 @@ function setupCanvas() {
     }
   }
   const pad = 24;
-  ox = -minX + pad;
-  oy = -minY + pad;
   canvas.width = Math.ceil(maxX - minX + pad * 2);
   canvas.height = Math.ceil(maxY - minY + pad * 2);
+  // 初始视图：完整显示地图
+  view.zoom = 1;
+  view.x = -minX + pad;
+  view.y = -minY + pad;
 }
 
+/** 轴向坐标 → 屏幕坐标（含视图变换） */
 function px(q, r) {
   const p = HEX.axialToPixel(q, r);
-  return { x: p.x + ox, y: p.y + oy };
+  return { x: p.x * view.zoom + view.x, y: p.y * view.zoom + view.y };
+}
+
+/** 屏幕坐标（canvas 内像素，含 CSS 缩放）→ 轴向坐标 */
+function screenToAxial(sx, sy) {
+  const wx = (sx - view.x) / view.zoom;
+  const wy = (sy - view.y) / view.zoom;
+  return HEX.pixelToAxial(wx, wy);
 }
 
 function drawHex(cx, cy, size, fill, stroke) {
-  const pts = HEX.hexCorners(cx, cy, size);
+  const pts = HEX.hexCorners(cx, cy, size * view.zoom);
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < 6; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -103,12 +115,13 @@ function render() {
   }
 
   // 单位
+  const z = view.zoom;
   for (const u of Game.map.units) {
     if (!u.alive()) continue;
     const c = px(u.q, u.r);
     const col = u.side === 'player' ? COLOR_PLAYER : COLOR_ENEMY;
     ctx.beginPath();
-    ctx.arc(c.x, c.y, 28, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, 28 * z, 0, Math.PI * 2);
     ctx.fillStyle = col;
     ctx.fill();
     ctx.strokeStyle = '#fff';
@@ -116,17 +129,17 @@ function render() {
     ctx.stroke();
     // 名称分行（每行最多 3 字），圆内上部
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 8px sans-serif';
+    ctx.font = `bold ${Math.max(7, 8 * z)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const lines = splitName(u.def().name);
-    const startY = c.y - 7 + (lines.length === 1 ? 2 : 0);
+    const startY = c.y - 7 * z + (lines.length === 1 ? 2 * z : 0);
     for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], c.x, startY + i * 9);
+      ctx.fillText(lines[i], c.x, startY + i * 9 * z);
     }
     // HP 圆内下部
-    ctx.font = '9px sans-serif';
-    ctx.fillText(u.hp + '/' + u.maxHp(), c.x, c.y + 15);
+    ctx.font = `${Math.max(7, 9 * z)}px sans-serif`;
+    ctx.fillText(u.hp + '/' + u.maxHp(), c.x, c.y + 15 * z);
   }
 }
 
@@ -315,11 +328,33 @@ function unitInfoHtml(u) {
 }
 
 const tooltip = document.getElementById('tooltip');
+
+// 拖动平移状态
+let dragging = false, dragStart = null, dragMoved = false;
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0) {
+    dragging = true;
+    dragMoved = false;
+    dragStart = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
 canvas.addEventListener('mousemove', (e) => {
+  if (dragging) {
+    const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+    view.x = dragStart.vx + dx;
+    view.y = dragStart.vy + dy;
+    render();
+    return;
+  }
+  // 悬浮提示
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) * (canvas.width / rect.width) - ox;
-  const y = (e.clientY - rect.top) * (canvas.height / rect.height) - oy;
-  const hex = HEX.pixelToAxial(x, y);
+  const sx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const sy = (e.clientY - rect.top) * (canvas.height / rect.height);
+  const hex = screenToAxial(sx, sy);
   const unit = HEX.inBounds(hex.q, hex.r, Game.map.width, Game.map.height)
     ? Game.map.getUnitAt(hex.q, hex.r) : null;
   if (unit && unit.alive()) {
@@ -335,14 +370,43 @@ canvas.addEventListener('mousemove', (e) => {
     tooltip.style.display = 'none';
   }
 });
-canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+canvas.addEventListener('mouseup', () => {
+  dragging = false;
+  canvas.style.cursor = 'grab';
+});
+
+canvas.addEventListener('mouseleave', () => {
+  dragging = false;
+  dragMoved = false;
+  canvas.style.cursor = 'grab';
+  tooltip.style.display = 'none';
+});
+
+// 滚轮缩放（以鼠标位置为中心）
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+  const wx = (mx - view.x) / view.zoom;   // 鼠标下的世界坐标
+  const wy = (my - view.y) / view.zoom;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  view.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom * factor));
+  view.x = mx - wx * view.zoom;           // 保持鼠标下的点不动
+  view.y = my - wy * view.zoom;
+  render();
+}, { passive: false });
 
 canvas.addEventListener('click', (e) => {
+  const wasDrag = dragMoved;
+  dragMoved = false;
+  if (wasDrag) return;       // 拖动后松手不算点击
   if (!Game.isPlayerTurn()) return;
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) * (canvas.width / rect.width) - ox;
-  const y = (e.clientY - rect.top) * (canvas.height / rect.height) - oy;
-  const hex = HEX.pixelToAxial(x, y);
+  const sx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const sy = (e.clientY - rect.top) * (canvas.height / rect.height);
+  const hex = screenToAxial(sx, sy);
   if (!HEX.inBounds(hex.q, hex.r, Game.map.width, Game.map.height)) return;
 
   const clickedUnit = Game.map.getUnitAt(hex.q, hex.r);
