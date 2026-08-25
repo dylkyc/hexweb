@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>六边形战棋 Demo</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      background: #1e1e24;
+      color: #e8e8e8;
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      min-height: 100vh;
+    }
+    #left, #center {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #econPanel {
+      width: 230px;
+      flex-shrink: 0;
+      border-right: 1px solid #444;
+      background: #191920;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      overflow-y: auto;
+      padding: 10px 12px;
+    }
+    .econ-title { font-size: 15px; font-weight: bold; color: #ddd; margin-bottom: 8px; }
+    .econ-sub { font-size: 12px; color: #999; margin: 10px 0 4px; }
+    #econRes {
+      font-size: 14px; line-height: 1.9;
+      background: #22222a; border-radius: 6px; padding: 8px 10px;
+    }
+    #econTowns { display: flex; flex-direction: column; gap: 4px; }
+    .town-btn {
+      text-align: left; font-size: 12px; padding: 6px 8px;
+    }
+    #econProd { display: flex; flex-direction: column; gap: 4px; }
+    .prod-head { font-size: 12px; color: #aaa; margin-bottom: 2px; }
+    .prod-btn {
+      text-align: left; font-size: 12px; padding: 6px 8px; line-height: 1.4;
+    }
+    .prod-cost { color: #9a9; font-size: 11px; }
+    .prod-btn.unaffordable { opacity: 0.45; }
+    .muted { color: #888; font-size: 12px; }
+    #logPanel {
+      width: 300px;
+      flex-shrink: 0;
+      border-left: 1px solid #444;
+      background: #191920;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+    }
+    .log-title {
+      padding: 10px 14px;
+      font-size: 15px;
+      font-weight: bold;
+      border-bottom: 1px solid #444;
+      color: #ddd;
+    }
+    #logList {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px;
+      font-size: 12px;
+      line-height: 1.8;
+      color: #ccc;
+    }
+    .log-entry { border-bottom: 1px dashed #333; padding: 2px 0; }
+    .log-morale { color: #c9a86a; font-style: italic; }
+    .log-kill { color: #ff6b6b; font-weight: bold; }
+    .log-capture { color: #ffd75e; font-weight: bold; }
+    .log-turn {
+      color: #7db8ff;
+      font-weight: bold;
+      text-align: center;
+      background: #222a36;
+      border: none;
+      margin: 5px 0 3px;
+      padding: 4px 2px;
+      font-size: 13px;
+    }
+    #topbar {
+      width: 100%;
+      max-width: 1100px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 16px;
+    }
+    #topbar h1 { font-size: 18px; margin: 0; }
+    #info { font-size: 15px; flex: 1; }
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      border: 1px solid #555;
+      border-radius: 6px;
+      background: #333;
+      color: #eee;
+      cursor: pointer;
+    }
+    button:hover { background: #444; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #stage { position: relative; }
+    canvas {
+      display: block;
+      max-width: 96vw;
+      height: auto;
+      border: 1px solid #444;
+      border-radius: 6px;
+      background: #14141a;
+      cursor: pointer;
+    }
+    #unitPanel {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      background: rgba(20, 20, 28, 0.92);
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      line-height: 1.7;
+      display: none;
+    }
+    #dialog {
+      position: absolute;
+      left: 50%;
+      bottom: 8px;
+      transform: translateX(-50%);
+      background: rgba(20, 20, 28, 0.95);
+      border: 1px solid #888;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 14px;
+      display: none;
+      white-space: nowrap;
+    }
+    #tooltip {
+      position: fixed;
+      background: rgba(20, 20, 28, 0.96);
+      border: 1px solid #666;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.7;
+      pointer-events: none;
+      display: none;
+      z-index: 20;
+      max-width: 340px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    #overlay .box {
+      background: #26262e;
+      border: 1px solid #666;
+      border-radius: 10px;
+      padding: 28px 40px;
+      text-align: center;
+    }
+    #resultText { font-size: 20px; margin-bottom: 18px; }
+    #help { max-width: 1100px; color: #999; font-size: 13px; padding: 8px 16px; }
+    #legend {
+      max-width: 1100px;
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+      padding: 6px 16px;
+      font-size: 13px;
+      color: #ccc;
+    }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+    .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #555; display: inline-block; flex-shrink: 0; }
+    .legend-note { color: #888; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="econPanel">
+    <div class="econ-title">💰 经济</div>
+    <div id="econRes"></div>
+    <div class="econ-sub">我方城镇</div>
+    <div id="econTowns"></div>
+    <div class="econ-sub">生产</div>
+    <div id="econProd"></div>
+  </div>
+
+  <div id="center">
+    <div id="topbar">
+      <h1>六边形战棋 Demo</h1>
+      <span id="info"></span>
+      <button id="endTurn">结束回合</button>
+      <button id="restartBtn">重新开始</button>
+    </div>
+
+    <div id="stage">
+      <canvas id="board"></canvas>
+      <div id="unitPanel"></div>
+      <div id="dialog"></div>
+    </div>
+
+    <div id="legend"></div>
+
+    <div id="help">
+      点击己方单位选中（黄=选中，绿=可移动，红=可攻击）→ 点绿格移动、点红格攻击。左侧经济面板可选城镇生产单位。占领敌方城市（右上「城」）并消灭敌军即胜利。
+    </div>
+  </div>
+
+  <div id="logPanel">
+    <div class="log-title">📜 棋谱（移动 / 攻击）</div>
+    <div id="logList"></div>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <div id="overlay">
+    <div class="box">
+      <div id="resultText"></div>
+      <button id="restart">重新开始</button>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/hex.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/render.js"></script>
+</body>
+</html>
